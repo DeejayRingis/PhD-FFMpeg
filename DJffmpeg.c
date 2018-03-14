@@ -96,7 +96,7 @@ if(!pPacket){
 
 int response =0;
 int how_many_packets_to_process =8;
-
+/*
 while (av_read_frame(pFormatContext,pPacket) >= 0){
 	if(pPacket->stream_index==video_stream_index){
 		printf("AvPacket->pts %" PRId64, pPacket->pts);
@@ -108,7 +108,24 @@ while (av_read_frame(pFormatContext,pPacket) >= 0){
 	}
 	av_packet_unref(pPacket);
 }
+*/
+//new shizz
+pFrameRGB=avcodec_alloc_frame();
+if(pFrameRGB==NULL);
+	return -1;
 
+numBytes=avpicture_get_size(PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
+	
+buffer=malloc(numBytes);
+	
+avpicture_fill((AVPicture *)pFrameRGB, buffer, PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
+while (av_read_frame(pFormatContext,pPacket) >= 0){
+	if(pPacket->stream_index==video_stream_index){
+		//avcodec_decode_video(pCodecCtx, pFrame, &frameFinished, packet.data, packet.size);
+		avcodec_receive_frame(pCodcCtx,pFrame);
+		
+	
+	
 printf("releaseing all resources \n");
 
 avformat_close_input(&pFormatContext);
