@@ -22,7 +22,7 @@ if (!pFormatContext){
 	return -1;
 }
 
-printf("Opening the video file", argv[1],"\n");
+printf("Opening the video file");
 
 
 if (avformat_open_input(&pFormatContext,argv[1],NULL, NULL) !=0){
@@ -31,7 +31,7 @@ if (avformat_open_input(&pFormatContext,argv[1],NULL, NULL) !=0){
 }
 
 
-printf("Format %s, duration %lld us", pFormatContext->iformat->long_name, pFormatContext->duration);
+
 
 if (avformat_find_stream_info(pFormatContext, NULL)<0){
 	printf("error, could not get stream info");
@@ -62,7 +62,7 @@ for (int i=0; i < pFormatContext->nb_streams;i++){
 	}
 
 
-	printf("\tCodec %s ID %d bit_rate %lld", pLocalCodec->long_name, pLocalCodec->id, pCodecParameters->bit_rate);
+	
 }
 
 AVCodecContext *pCodecContext = avcodec_alloc_context3(pCodec);
@@ -112,7 +112,7 @@ while (av_read_frame(pFormatContext,pPacket) >= 0){
 printf("releaseing all resources \n");
 
 avformat_close_input(&pFormatContext);
-avformat_free_contet(pFormatContext);
+avformat_free_context(pFormatContext);
 av_packet_free(&pPacket);
 av_frame_free(&pFrame);
 avcodec_free_context(&pCodecContext);
@@ -124,7 +124,7 @@ static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFra
 	int response = avcodec_send_packet(pCodecContext, pPacket);
 
 	if(response <0){
-		printf("error while sending packet to decoded", av_err2str(response));
+		printf("error while sending packet to decoded");
 		return response;
 	}
 
@@ -139,15 +139,7 @@ static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFra
 		}
 
 		if (response >= 0) {
-		printf(
-          "Frame %d (type=%c, size=%d bytes) pts %d key_frame %d [DTS %d]",
-          pCodecContext->frame_number,
-          av_get_picture_type_char(pFrame->pict_type),
-          pFrame->pkt_size,
-          pFrame->pts,
-          pFrame->key_frame,
-          pFrame->coded_picture_number
-		);
+		
 
 		char frame_filename[1024];
 		snprintf(frame_filename, sizeof(frame_filename), "%s-%d.pgm", "frame", pCodecContext->frame_number);
