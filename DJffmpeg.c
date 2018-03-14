@@ -1,170 +1,186 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
-#include </home/dj/ffmpeg/libswscale/swscale.h> //this was out of date in tutorial
+#include <stdio.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
+#include <inttypes.h>
 
-void SaveFrame(AVFrame *pFrame, int width, int height, int iFrame);
-
-
-int main(int argc, char *argv[]) {
-av_register_all();
-
-AVFormatContext *pFormatCtx = NULL;
-
-// Open video file
-if(avformat_open_input(&pFormatCtx, argv[1], NULL, NULL)!=0)
-  return -1; // Couldn't open file
-
-// Retrieve stream information
-if(avformat_find_stream_info(pFormatCtx, NULL)<0)
-  return -1; // Couldn't find stream information
-
-// Dump information about file onto standard error
-av_dump_format(pFormatCtx, 0, argv[1], 0);
-
-int i;
-AVCodecContext *pCodecCtxOrig = NULL;
-AVCodecContext *pCodecCtx = NULL;
-
-// Find the first video stream
-int videoStream=-1;
-for(i=0; i<pFormatCtx->nb_streams; i++)
-  if(pFormatCtx->streams[i]->codec->codec_type==AVMEDIA_TYPE_VIDEO) {
-    videoStream=i;
-    break;
-  }
-if(videoStream==-1)
-  return -1; // Didn't find a video stream
-
-// Get a pointer to the codec context for the video stream
-pCodecCtx=pFormatCtx->streams[videoStream]->codec;
-
-AVCodec *pCodec = NULL;
-
-// Find the decoder for the video stream
-pCodec=avcodec_find_decoder(pCodecCtx->codec_id);
-if(pCodec==NULL) {
-  fprintf(stderr, "Unsupported codec!\n");
-  return -1; // Codec not found
-}
-// Copy context
-pCodecCtx = avcodec_alloc_context3(pCodec);
-if(avcodec_copy_context(pCodecCtx, pCodecCtxOrig) != 0) {
-  fprintf(stderr, "Couldn't copy codec context");
-  return -1; // Error copying codec context
-}
-// Open codec
-if(avcodec_open2(pCodecCtx, pCodec, NULL)<0)
-  return -1; // Could not open codec
+static void save_gray_frame(unsigned char *buf, int wrap, int xsize, int ysize, char *filename);
+static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFrame *pFrame);
 
 
-AVFrame *pFrame = NULL;
+int main(int argc, const char *argv[])
+{
+printf("initializing all containers, codecs and protocols\n");
 
-// Allocate video frame
-pFrame=av_frame_alloc();
+av_register_all(); //allow for all codects to be used
 
-// Allocate an AVFrame structure
-pFrameRGB=av_frame_alloc();
-if(pFrameRGB==NULL)
-  return -1;
-
-
-uint8_t *buffer = NULL;
-int numBytes;
-// Determine required buffer size and allocate buffer
-numBytes=avpicture_get_size(PIX_FMT_RGB24, pCodecCtx->width,
-                            pCodecCtx->height);
-buffer=(uint8_t *)av_malloc(numBytes*sizeof(uint8_t));
-
-
-// Assign appropriate parts of buffer to image planes in pFrameRGB
-// Note that pFrameRGB is an AVFrame, but AVFrame is a superset
-// of AVPicture
-avpicture_fill((AVPicture *)pFrameRGB, buffer, PIX_FMT_RGB24,
-                pCodecCtx->width, pCodecCtx->height);
-
-
-struct SwsContext *sws_ctx = NULL;
-int frameFinished;
-AVPacket packet;
-// initialize SWS context for software scaling
-sws_ctx = sws_getContext(pCodecCtx->width,
-    pCodecCtx->height,
-    pCodecCtx->pix_fmt,
-    pCodecCtx->width,
-    pCodecCtx->height,
-    PIX_FMT_RGB24,
-    SWS_BILINEAR,
-    NULL,
-    NULL,
-    NULL
-    );
-
-i=0;
-while(av_read_frame(pFormatCtx, &packet)>=0) {
-  // Is this a packet from the video stream?
-  if(packet.stream_index==videoStream) {
-	// Decode video frame
-    avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
-    
-    // Did we get a video frame?
-    if(frameFinished) {
-    // Convert the image from its native format to RGB
-        sws_scale(sws_ctx, (uint8_t const * const *)pFrame->data,
-		  pFrame->linesize, 0, pCodecCtx->height,
-		  pFrameRGB->data, pFrameRGB->linesize);
-	
-        // Save the frame to disk
-        if(++i<=5)
-          SaveFrame(pFrameRGB, pCodecCtx->width, 
-                    pCodecCtx->height, i);
-    }
-  }
-    
-  // Free the packet that was allocated by av_read_frame
-  av_free_packet(&packet);
+AVFormatContext *pFormatContext = avformat_alloc_context();
+if (!pFormatContext){
+	printf("Error could not allocate memory for Format Context\n");
+	return -1;
 }
 
-// Free the RGB image
-av_free(buffer);
-av_free(pFrameRGB);
+printf("Opening the video file", argv[1],"\n");
 
-// Free the YUV frame
-av_free(pFrame);
 
-// Close the codecs
-avcodec_close(pCodecCtx);
-avcodec_close(pCodecCtxOrig);
+if (avformat_open_input(&pFormatContext,argv[1],NULL, NULL) !=0){
+	printf("Error, could not open file");
+	return -1;
+}
 
-// Close the video file
-avformat_close_input(&pFormatCtx);
 
+printf("Format %s, duration %lld us", pFormatContext->iformat->long_name, pFormatContext->duration);
+
+if (avformat_find_stream_info(pFormatContext, NULL)<0){
+	printf("error, could not get stream info");
+	return -1;
+}
+
+AVCodec *pCodec =NULL;
+AVCodecParameters *pCodecParameters =NULL;
+int video_stream_index = -1;
+
+for (int i=0; i < pFormatContext->nb_streams;i++){
+	AVCodecParameters *pLocalCodecParameters =  NULL;
+	pLocalCodecParameters = pFormatContext->streams[i]->codecpar;
+	printf("looking for videostream \n");
+	AVCodec *pLocalCodec = NULL;
+ 	pLocalCodec = avcodec_find_decoder(pLocalCodecParameters->codec_id);
+
+	if(pLocalCodec==NULL){
+		printf("error, unsupported codec");
+		return -1;
+	}
+
+	if (pLocalCodecParameters->codec_type== AVMEDIA_TYPE_VIDEO){
+		video_stream_index =i;
+		pCodec =pLocalCodec;
+		pCodecParameters = pLocalCodecParameters;
+		printf("Video Codec: resolution %d x %d", pLocalCodecParameters->width, pLocalCodecParameters->height);
+	}
+
+
+	printf("\tCodec %s ID %d bit_rate %lld", pLocalCodec->long_name, pLocalCodec->id, pCodecParameters->bit_rate);
+}
+
+AVCodecContext *pCodecContext = avcodec_alloc_context3(pCodec);
+if(!pCodecContext)
+{
+	printf("failed to allocate memory");
+	return -1;
+}
+
+if(avcodec_parameters_to_context(pCodecContext,pCodecParameters)<0){
+	printf("failed to copy codec params to codec context");
+	return -1;
+}
+
+if(avcodec_open2(pCodecContext, pCodec, NULL)>0){
+	printf("failed to open codec");
+	return -1;
+}
+
+AVFrame *pFrame =av_frame_alloc();
+if(!pFrame){
+	printf("failed to allocate mem for AVFrame");
+	return -1;
+}
+
+AVPacket *pPacket = av_packet_alloc();
+if(!pPacket){
+	printf("failed to allocate memory for AVPacket");
+	return -1;
+}
+
+int response =0;
+int how_many_packets_to_process =8;
+
+while (av_read_frame(pFormatContext,pPacket) >= 0){
+	if(pPacket->stream_index==video_stream_index){
+		printf("AvPacket->pts %" PRId64, pPacket->pts);
+		response = decode_packet(pPacket,pCodecContext,pFrame);
+		if(response<0)
+			break;
+		if(--how_many_packets_to_process <= 0) 
+			break;
+	}
+	av_packet_unref(pPacket);
+}
+
+printf("releaseing all resources \n");
+
+avformat_close_input(&pFormatContext);
+avformat_free_contet(pFormatContext);
+av_packet_free(&pPacket);
+av_frame_free(&pFrame);
+avcodec_free_context(&pCodecContext);
 return 0;
+}
 
+static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFrame *pFrame)
+{
+	int response = avcodec_send_packet(pCodecContext, pPacket);
+
+	if(response <0){
+		printf("error while sending packet to decoded", av_err2str(response));
+		return response;
+	}
+
+	while(response >= 0)
+	{
+		response = avcodec_receive_frame(pCodecContext,pFrame);
+		if(response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
+			break;
+		} else if (response <0) {
+			printf("Error while receiving a frame from the decoder: %s",av_err2str(response));
+			return response;
+		}
+
+		if (response >= 0) {
+		printf(
+          "Frame %d (type=%c, size=%d bytes) pts %d key_frame %d [DTS %d]",
+          pCodecContext->frame_number,
+          av_get_picture_type_char(pFrame->pict_type),
+          pFrame->pkt_size,
+          pFrame->pts,
+          pFrame->key_frame,
+          pFrame->coded_picture_number
+		);
+
+		char frame_filename[1024];
+		snprintf(frame_filename, sizeof(frame_filename), "%s-%d.pgm", "frame", pCodecContext->frame_number);
+      // save a grayscale frame into a .pgm file
+      		save_gray_frame(pFrame->data[0], pFrame->linesize[0], pFrame->width, pFrame->height, frame_filename);
+
+		av_frame_unref(pFrame);
+		}
+	}
+	return 0;
 }
 
 
-void SaveFrame(AVFrame *pFrame, int width, int height, int iFrame) {
-  FILE *pFile;
-  char szFilename[32];
-  int  y;
-  
-  // Open file
-  sprintf(szFilename, "frame%d.ppm", iFrame);
-  pFile=fopen(szFilename, "wb");
-  if(pFile==NULL)
-    return;
-  
-  // Write header
-  fprintf(pFile, "P6\n%d %d\n255\n", width, height);
-  
-  // Write pixel data
-  for(y=0; y<height; y++)
-    fwrite(pFrame->data[0]+y*pFrame->linesize[0], 1, width*3, pFile);
-  
-  // Close file
-  fclose(pFile);
+
+static void save_gray_frame(unsigned char *buf, int wrap, int xsize, int ysize, char *filename)
+{
+    FILE *f;
+    int i;
+    f = fopen(filename,"w");
+    // writing the minimal required header for a pgm file format
+    // portable graymap format -> https://en.wikipedia.org/wiki/Netpbm_format#PGM_example
+    fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
+
+    // writing line by line
+    for (i = 0; i < ysize; i++)
+        fwrite(buf + i * wrap, 1, xsize, f);
+    fclose(f);
 }
 
 
+
+
+
+	
 
 
