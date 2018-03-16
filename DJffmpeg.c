@@ -93,9 +93,8 @@ if(!pPacket){
 	printf("failed to allocate memory for AVPacket");
 	return -1;
 }
+int ret;
 
-int response =0;
-int how_many_packets_to_process =8;
 /*
 while (av_read_frame(pFormatContext,pPacket) >= 0){
 	if(pPacket->stream_index==video_stream_index){
@@ -114,15 +113,19 @@ pFrameRGB=avcodec_alloc_frame();
 if(pFrameRGB==NULL);
 	return -1;
 
-numBytes=avpicture_get_size(PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
+//numBytes=avpicture_get_size(PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
 	
-buffer=malloc(numBytes);
+//buffer=malloc(numBytes);
 	
-avpicture_fill((AVPicture *)pFrameRGB, buffer, PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
+//avpicture_fill((AVPicture *)pFrameRGB, buffer, PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
+
 while (av_read_frame(pFormatContext,pPacket) >= 0){
 	if(pPacket->stream_index==video_stream_index){
 		//avcodec_decode_video(pCodecCtx, pFrame, &frameFinished, packet.data, packet.size);
-		avcodec_receive_frame(pCodcCtx,pFrame);
+		ret=avcodec_receive_frame(pCodcCtx,pFrame);
+		display_frame(pFrame,		
+
+			
 		
 	
 	
@@ -135,61 +138,3 @@ av_frame_free(&pFrame);
 avcodec_free_context(&pCodecContext);
 return 0;
 }
-
-static int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFrame *pFrame)
-{
-	int response = avcodec_send_packet(pCodecContext, pPacket);
-
-	if(response <0){
-		printf("error while sending packet to decoded");
-		return response;
-	}
-
-	while(response >= 0)
-	{
-		response = avcodec_receive_frame(pCodecContext,pFrame);
-		if(response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
-			break;
-		} else if (response <0) {
-			printf("Error while receiving a frame from the decoder: %s",av_err2str(response));
-			return response;
-		}
-
-		if (response >= 0) {
-		
-
-		char frame_filename[1024];
-		snprintf(frame_filename, sizeof(frame_filename), "%s-%d.pgm", "frame", pCodecContext->frame_number);
-      // save a grayscale frame into a .pgm file
-      		save_gray_frame(pFrame->data[0], pFrame->linesize[0], pFrame->width, pFrame->height, frame_filename);
-
-		av_frame_unref(pFrame);
-		}
-	}
-	return 0;
-}
-
-
-
-static void save_gray_frame(unsigned char *buf, int wrap, int xsize, int ysize, char *filename)
-{
-    FILE *f;
-    int i;
-    f = fopen(filename,"w");
-    // writing the minimal required header for a pgm file format
-    // portable graymap format -> https://en.wikipedia.org/wiki/Netpbm_format#PGM_example
-    fprintf(f, "P5\n%d %d\n%d\n", xsize, ysize, 255);
-
-    // writing line by line
-    for (i = 0; i < ysize; i++)
-        fwrite(buf + i * wrap, 1, xsize, f);
-    fclose(f);
-}
-
-
-
-
-
-	
-
-
